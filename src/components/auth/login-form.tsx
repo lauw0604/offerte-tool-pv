@@ -28,8 +28,11 @@ export function LoginForm() {
         return;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Use window.location for a hard redirect to ensure cookies are read
+      window.location.href = "/dashboard";
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
