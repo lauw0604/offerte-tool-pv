@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { calculateAnnualYield, calculateOfferTotals, type OfferLine, type OfferOrientation } from "@/lib/offer-calculations";
+import { downloadOfferPdf } from "@/lib/pdf/offer-pdf";
+import { EmailTextDisplay } from "./email-text-display";
+import type { OfferEmailData } from "@/lib/email-generator";
 
 type CustomerDraft = {
   name: string;
@@ -62,6 +65,7 @@ export function OfferBuilder() {
   const [lines, setLines] = useState<OfferLine[]>(initialOfferLines);
   const [offerNumber, setOfferNumber] = useState("2026-001");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showEmailText, setShowEmailText] = useState(false);
 
   const annualYield = useMemo(
     () => calculateAnnualYield(panelCount, wattPeak, orientation),
@@ -143,6 +147,40 @@ export function OfferBuilder() {
     }
 
     setSaveMessage(`Offerte ${validNumber} is opgeslagen.`);
+  }
+
+  async function handleGeneratePdf() {
+    const pdfData = {
+      offerNumber: offerNumber || "2026-001",
+      customerName: customer.name || "Onbekend",
+      customerAddress: customer.address || "",
+      postcodeCity: [customer.postal_code, customer.city].filter(Boolean).join(" "),
+      introText: "Wij leveren een passend PV-systeem met een heldere offerte en een duidelijke installatieopzet.",
+      panelCount,
+      totalWattPeak: panelCount * wattPeak,
+      annualYield,
+      lines: lines.map((line) => ({
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        vatRate: line.vatRate,
+        productCategory: line.productCategory,
+      })),
+      totals: {
+        subtotalA: totals.subtotalA,
+        subtotalB: totals.subtotalB,
+        totalExcl: totals.totalExcl,
+        totalVat: totals.totalVat,
+        totalIncl: totals.totalIncl,
+      },
+    };
+
+    await downloadOfferPdf(pdfData, `${pdfData.offerNumber}.pdf`);
+    setSaveMessage(`PDF voor ${pdfData.offerNumber} wordt gedownload.`);
+  }
+
+  function handleShowEmailText() {
+    setShowEmailText(true);
   }
 
   function addLine() {
@@ -420,12 +458,14 @@ export function OfferBuilder() {
             </button>
             <button
               type="button"
+              onClick={handleGeneratePdf}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400"
             >
               PDF genereren
             </button>
             <button
               type="button"
+              onClick={handleShowEmailText}
               className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400"
             >
               E-mailtekst genereren
@@ -433,6 +473,36 @@ export function OfferBuilder() {
           </div>
         </aside>
       </div>
+
+      {showEmailText && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">E-mailtekst</h2>
+            <button
+              onClick={() => setShowEmailText(false)}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              ✕
+            </button>
+          </div>
+          <EmailTextDisplay
+            data={{
+              offerNumber: offerNumber || "2026-001",
+              customerName: customer.name || "Onbekend",
+              customerEmail: customer.email || "",
+              totalInclVat: totals.totalIncl,
+              panelCount,
+              annualYield,
+              validUntilDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString(
+                "nl-NL"
+              ),
+              introText:
+                "Wij leveren een passend PV-systeem met een heldere offerte en een duidelijke installatieopzet.",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
+
