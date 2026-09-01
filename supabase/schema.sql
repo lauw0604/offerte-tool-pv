@@ -106,3 +106,98 @@ $$ language plpgsql;
 create trigger products_updated_at before update on public.products for each row execute function public.update_updated_at_column();
 create trigger customers_updated_at before update on public.customers for each row execute function public.update_updated_at_column();
 create trigger settings_updated_at before update on public.settings for each row execute function public.update_updated_at_column();
+
+-- Teams table for team-based access control
+create table if not exists public.teams (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text unique,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Team members table
+create table if not exists public.team_members (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  created_at timestamptz not null default now(),
+  unique(team_id, user_id)
+);
+
+-- Add team_id column to offertes if not exists
+alter table public.offertes add column if not exists team_id uuid references public.teams(id) on delete set null;
+
+-- Enable RLS on new tables
+alter table public.teams enable row level security;
+alter table public.team_members enable row level security;
+
+-- RLS policies for teams
+create policy "users can read teams they are members of" on public.teams for select using (
+  exists (
+    select 1 from public.team_members tm
+    where tm.team_id = teams.id
+    and tm.user_id = auth.uid()
+  )
+  or owner_id = auth.uid()
+);
+
+create policy "team owners can edit their team" on public.teams for all using (
+  owner_id = auth.uid()
+) with check (
+  owner_id = auth.uid()
+);
+
+-- RLS policies for team members
+create policy "users can read team members of their teams" on public.team_members for select using (
+  exists (
+    select 1 from public.teams t
+    where t.id = team_members.team_id
+    and (t.owner_id = auth.uid() or t.id in (
+      select team_id from public.team_members tm2
+      where tm2.user_id = auth.uid()
+    ))
+  )
+);
+
+create policy "team owners can manage members" on public.team_members for all using (
+  exists (
+    select 1 from public.teams t
+    where t.id = team_members.team_id
+    and t.owner_id = auth.uid()
+  )
+) with check (
+  exists (
+    select 1 from public.teams t
+    where t.id = team_members.team_id
+    and t.owner_id = auth.uid()
+  )
+);
+
+-- Update RLS policies for offertes to include team access
+create policy "users can read offertes from their teams" on public.offertes for select using (
+  team_id in (
+    select team_id from public.team_members
+    where user_id = auth.uid()
+  )
+  or team_id is null and auth.role() = 'authenticated'
+) with check (true);
+
+create policy "users can edit offertes in their teams" on public.offertes for all using (
+  team_id in (
+    select team_id from public.team_members
+    where user_id = auth.uid()
+  )
+  or team_id is null and auth.role() = 'authenticated'
+) with check (
+  team_id in (
+    select team_id from public.team_members
+    where user_id = auth.uid()
+  )
+  or team_id is null and auth.role() = 'authenticated'
+);
+
+-- Triggers for teams and team_members
+create trigger teams_updated_at before update on public.teams for each row execute function public.update_updated_at_column();
