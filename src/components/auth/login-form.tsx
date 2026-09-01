@@ -6,7 +6,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("demo@plusminenergie.nl");
+  const [email, setEmail] = useState("demo@plusminenergie.com");
   const [password, setPassword] = useState("Welkom123!");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
